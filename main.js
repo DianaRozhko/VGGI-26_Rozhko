@@ -5,33 +5,13 @@ let surface;                    // A surface model
 let shProgram;                  // A shader program
 let spaceball;                  // A SimpleRotator object that lets the user rotate the view by mouse.
 
+// ---- Astroidal torus parameters (The book of surfaces, Fig. 3, scaled by 0.5) ----
+const a     = 0.5;              // size of the generatrix astroid
+const r     = 1.0;              // distance of the astroid from the rotation axis
+const theta = 0.25 * Math.PI;   // rotation angle of the astroid's local axes
+
 function deg2rad(angle) {
     return angle * Math.PI / 180;
-}
-
-
-// Constructor
-function Model(name) {
-    this.name = name;
-    this.iVertexBuffer = gl.createBuffer();
-    this.count = 0;
-
-    this.BufferData = function(vertices) {
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STREAM_DRAW);
-
-        this.count = vertices.length/3;
-    }
-
-    this.Draw = function() {
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
-        gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(shProgram.iAttribVertex);
-   
-        gl.drawArrays(gl.LINE_STRIP, 0, this.count);
-    }
 }
 
 
@@ -54,10 +34,6 @@ function ShaderProgram(name, program) {
 }
 
 
-/* Draws a colored cube, along with a set of coordinate axes.
- * (Note that the use of the above drawPrimitive function is not an efficient
- * way to draw with WebGL.  Here, the geometry is so simple that it doesn't matter.)
- */
 function draw() { 
     gl.clearColor(0,0,0,1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -79,23 +55,56 @@ function draw() {
     let modelViewProjection = m4.multiply(projection, matAccum1 );
 
     gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection );
-    
-    /* Draw the six faces of a cube, with different colors. */
-    gl.uniform4fv(shProgram.iColor, [1,1,0,1] );
 
     surface.Draw();
 }
 
+
+// Point of the astroidal torus, parameters: u in [-PI, PI], v in [0, 2*PI]
+//   x(u) = a*cos^3(u),  z(u) = a*sin^3(u)
+//   X = [r + x(u)*cos(theta) - z(u)*sin(theta)] * cos(v)
+//   Y = [r + x(u)*cos(theta) - z(u)*sin(theta)] * sin(v)
+//   Z = x(u)*sin(theta) + z(u)*cos(theta)
+function surfacePoint(u, v) {
+    const xu = a * Math.pow(Math.cos(u), 3);
+    const zu = a * Math.pow(Math.sin(u), 3);
+    const rho = r + xu * Math.cos(theta) - zu * Math.sin(theta);
+    return [
+        rho * Math.cos(v),
+        rho * Math.sin(v),
+        xu * Math.sin(theta) + zu * Math.cos(theta)
+    ];
+}
+
+
+// Returns [uCurves, vCurves]; each curve is an array of [x, y, z]
 function CreateSurfaceData()
 {
-    let vertexList = [];
+    const N = 36;   // number of polylines in each set
+    const M = 72;   // segments in each polyline
+    const uMin = -Math.PI, uMax = Math.PI;
+    const vMin = 0,        vMax = 2 * Math.PI;
+    const uCurves = [], vCurves = [];
 
-    for (let i=0; i<360; i+=5) {
-        vertexList.push( Math.sin(deg2rad(i)), 1, Math.cos(deg2rad(i)) );
-        vertexList.push( Math.sin(deg2rad(i)), 0, Math.cos(deg2rad(i)) );
+    // U polylines: u runs uMin..uMax (the astroid), v is fixed
+    for (let j = 0; j <= N; j++) {
+        const v = vMin + (vMax - vMin) * j / N;
+        const curve = [];
+        for (let k = 0; k <= M; k++)
+            curve.push(surfacePoint(uMin + (uMax - uMin) * k / M, v));
+        uCurves.push(curve);
     }
 
-    return vertexList;
+    // V polylines: v runs vMin..vMax (the circle), u is fixed
+    for (let i = 0; i <= N; i++) {
+        const u = uMin + (uMax - uMin) * i / N;
+        const curve = [];
+        for (let k = 0; k <= M; k++)
+            curve.push(surfacePoint(u, vMin + (vMax - vMin) * k / M));
+        vCurves.push(curve);
+    }
+
+    return [uCurves, vCurves];
 }
 
 
@@ -111,20 +120,13 @@ function initGL() {
     shProgram.iColor                     = gl.getUniformLocation(prog, "color");
 
     surface = new Model('Surface');
-    surface.BufferData(CreateSurfaceData());
+    const [uCurves, vCurves] = CreateSurfaceData();
+    surface.BufferData(uCurves, vCurves);
 
     gl.enable(gl.DEPTH_TEST);
 }
 
 
-/* Creates a program for use in the WebGL context gl, and returns the
- * identifier for that program.  If an error occurs while compiling or
- * linking the program, an exception of type Error is thrown.  The error
- * string contains the compilation or linking error.  If no error occurs,
- * the program identifier is the return value of the function.
- * The second and third parameters are strings that contain the
- * source code for the vertex shader and for the fragment shader.
- */
 function createProgram(gl, vShader, fShader) {
     let vsh = gl.createShader( gl.VERTEX_SHADER );
     gl.shaderSource(vsh,vShader);
@@ -149,9 +151,6 @@ function createProgram(gl, vShader, fShader) {
 }
 
 
-/**
- * initialization function that will be called when the page has loaded
- */
 function init() {
     let canvas;
     try {
