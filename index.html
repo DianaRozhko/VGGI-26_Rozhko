@@ -1,10 +1,14 @@
 <!DOCTYPE html>
 <html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
-<title>PA#1 - Astroidal torus</title>
+<title>PA#2 - Astroidal torus (Variant 21)</title>
 <style>
     body {
         background-color: #EEEEEE;
+        font-family: sans-serif;
+    }
+    .controls {
+        margin: 10px 0;
     }
 </style>
 
@@ -17,13 +21,20 @@
 </head>
 <body onload="init()">
 
-<h2>Astroidal torus - Rozhko</h2>
+<h2>Astroidal torus - Rozhko (Variant 21: Phong Shading & Facet Angle Weighted Normal)</h2>
 
 <p id="message">Drag your mouse on the surface to rotate it.<br>
 (On a touch screen, you can use your finger.)</p>
 
+<div class="controls">
+    <label>U Granularity (N): <span id="nVal">36</span></label>
+    <input type="range" id="nSlider" min="10" max="80" value="36" oninput="updateGranularity()">
+    <label style="margin-left: 20px;">V Granularity (M): <span id="mVal">36</span></label>
+    <input type="range" id="mSlider" min="10" max="80" value="36" oninput="updateGranularity()">
+</div>
+
 <div id="canvas-holder">
-   <canvas width="600" height="600" id="webglcanvas" style="background-color:red"></canvas>
+   <canvas width="600" height="600" id="webglcanvas" style="background-color:black"></canvas>
 </div>
 
 </body></html>
