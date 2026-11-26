@@ -1,29 +1,45 @@
 <!DOCTYPE html>
-<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Astroidal Torus — Control Task (Rozhko)</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #eeeeee;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+        }
+        .controls {
+            margin-bottom: 12px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        canvas {
+            border: 1px solid #444;
+        }
+    </style>
 
-<title>PA#1 - Astroidal torus</title>
-<style>
-    body {
-        background-color: #EEEEEE;
-    }
-</style>
-
-<script src="./Utils/trackball-rotator.js"></script>
-<script src="./Utils/m4.js"></script>
-<script src="./shader.gpu"></script>
-<script src="./model.js"></script>
-<script src="./main.js"></script>
-
+    <script src="./Utils/trackball-rotator.js"></script>
+    <script src="./Utils/m4.js"></script>
+    <script src="./shader.gpu"></script>
+    <script src="./model.js"></script>
+    <script src="./main.js"></script>
 </head>
 <body onload="init()">
+    <h2>Astroidal Torus — Normal, Diffuse &amp; Specular Mapping (Prioritize Tangent)</h2>
 
-<h2>Astroidal torus - Rozhko</h2>
+    <div class="controls">
+        <label>N (u): <input type="range" id="nSlider" min="10" max="100" value="36" oninput="updateGranularity()"> <span id="nVal">36</span></label>
+        <label>M (v): <input type="range" id="mSlider" min="10" max="100" value="36" oninput="updateGranularity()"> <span id="mVal">36</span></label>
+    </div>
 
-<p id="message">Drag your mouse on the surface to rotate it.<br>
-(On a touch screen, you can use your finger.)</p>
-
-<div id="canvas-holder">
-   <canvas width="600" height="600" id="webglcanvas" style="background-color:red"></canvas>
-</div>
-
-</body></html>
+    <div id="canvas-holder">
+        <canvas width="600" height="600" id="webglcanvas"></canvas>
+    </div>
+</body>
+</html>

@@ -1,70 +1,120 @@
 'use strict';
 
-let gl;                         // The webgl context.
-let surface;                    // A surface model
-let shProgram;                  // A shader program
-let spaceball;                  // A SimpleRotator object that lets the user rotate the view by mouse.
+let gl;
+let surface;
+let shProgram;
+let spaceball;
 
-// ---- Astroidal torus parameters (The book of surfaces, Fig. 3, scaled by 0.5) ----
-const a     = 0.5;              // size of the generatrix astroid
-const r     = 1.0;              // distance of the astroid from the rotation axis
-const theta = 0.25 * Math.PI;   // rotation angle of the astroid's local axes
+let diffuseTexture;
+let specularTexture;
+let normalTexture;
 
-function deg2rad(angle) {
-    return angle * Math.PI / 180;
-}
+const a     = 0.5;
+const r     = 1.0;
+const theta = 0.25 * Math.PI;
 
+let lightAngle = 0.0;
 
-// Constructor
 function ShaderProgram(name, program) {
-
     this.name = name;
     this.prog = program;
 
-    // Location of the attribute variable in the shader program.
     this.iAttribVertex = -1;
-    // Location of the uniform specifying a color for the primitive.
-    this.iColor = -1;
-    // Location of the uniform matrix representing the combined transformation.
+    this.iAttribNormal = -1;
+    this.iAttribTexCoord = -1;
+    this.iAttribTangent = -1;
+
+    this.iModelViewMatrix = -1;
     this.iModelViewProjectionMatrix = -1;
+    this.iLightPosition = -1;
+
+    this.iDiffuseMap = -1;
+    this.iSpecularMap = -1;
+    this.iNormalMap = -1;
 
     this.Use = function() {
         gl.useProgram(this.prog);
     }
 }
 
+function loadTexture(url) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    // Тимчасова заглушка 1x1 піксель, поки файл завантажується
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+                  new Uint8Array([128, 128, 255, 255]));
+
+    const image = new Image();
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+        if ((image.width & (image.width - 1)) === 0 && (image.height & (image.height - 1)) === 0) {
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        } else {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+    };
+    image.src = url;
+    return texture;
+}
+
+function multiplyMatrixVector(m, v) {
+    return [
+        m[0]*v[0] + m[4]*v[1] + m[8]*v[2] + m[12]*v[3],
+        m[1]*v[0] + m[5]*v[1] + m[9]*v[2] + m[13]*v[3],
+        m[2]*v[0] + m[6]*v[1] + m[10]*v[2] + m[14]*v[3],
+        m[3]*v[0] + m[7]*v[1] + m[11]*v[2] + m[15]*v[3]
+    ];
+}
 
 function draw() { 
-    gl.clearColor(0,0,0,1);
+    gl.clearColor(0.1, 0.1, 0.1, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
-    /* Set the values of the projection transformation */
     let projection = m4.perspective(Math.PI/8, 1, 8, 12); 
-    
-    /* Get the view matrix from the SimpleRotator object.*/
     let modelView = spaceball.getViewMatrix();
 
-    let rotateToPointZero = m4.axisRotation([0.707,0.707,0], 0.7);
-    let translateToPointZero = m4.translation(0,0,-10);
+    let rotateToPointZero = m4.axisRotation([0.707, 0.707, 0], 0.7);
+    let translateToPointZero = m4.translation(0, 0, -10);
 
-    let matAccum0 = m4.multiply(rotateToPointZero, modelView );
-    let matAccum1 = m4.multiply(translateToPointZero, matAccum0 );
+    let matAccum0 = m4.multiply(rotateToPointZero, modelView);
+    let matAccum1 = m4.multiply(translateToPointZero, matAccum0);
         
-    /* Multiply the projection matrix times the modelview matrix to give the
-       combined transformation matrix, and send that to the shader program. */
-    let modelViewProjection = m4.multiply(projection, matAccum1 );
+    let modelViewProjection = m4.multiply(projection, matAccum1);
 
-    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection );
+    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, matAccum1);
+    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection);
+
+    lightAngle += 0.02;
+    let lightWorldPos = [3.0 * Math.cos(lightAngle), 3.0 * Math.sin(lightAngle), 2.0];
+    let lightPosEye4 = multiplyMatrixVector(matAccum1, [lightWorldPos[0], lightWorldPos[1], lightWorldPos[2], 1.0]);
+    let lightPosEye = [lightPosEye4[0]/lightPosEye4[3], lightPosEye4[1]/lightPosEye4[3], lightPosEye4[2]/lightPosEye4[3]];
+
+    gl.uniform3fv(shProgram.iLightPosition, lightPosEye);
+
+    // Підключення трьох текстур до відповідних юнітів
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, diffuseTexture);
+    gl.uniform1i(shProgram.iDiffuseMap, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, specularTexture);
+    gl.uniform1i(shProgram.iSpecularMap, 1);
+
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+    gl.uniform1i(shProgram.iNormalMap, 2);
 
     surface.Draw();
 }
 
-
-// Point of the astroidal torus, parameters: u in [-PI, PI], v in [0, 2*PI]
-//   x(u) = a*cos^3(u),  z(u) = a*sin^3(u)
-//   X = [r + x(u)*cos(theta) - z(u)*sin(theta)] * cos(v)
-//   Y = [r + x(u)*cos(theta) - z(u)*sin(theta)] * sin(v)
-//   Z = x(u)*sin(theta) + z(u)*cos(theta)
 function surfacePoint(u, v) {
     const xu = a * Math.pow(Math.cos(u), 3);
     const zu = a * Math.pow(Math.sin(u), 3);
@@ -76,87 +126,94 @@ function surfacePoint(u, v) {
     ];
 }
 
-
-// Returns [uCurves, vCurves]; each curve is an array of [x, y, z]
-function CreateSurfaceData()
-{
-    const N = 36;   // number of polylines in each set
-    const M = 72;   // segments in each polyline
-    const uMin = -Math.PI, uMax = Math.PI;
-    const vMin = 0,        vMax = 2 * Math.PI;
-    const uCurves = [], vCurves = [];
-
-    // U polylines: u runs uMin..uMax (the astroid), v is fixed
-    for (let j = 0; j <= N; j++) {
-        const v = vMin + (vMax - vMin) * j / N;
-        const curve = [];
-        for (let k = 0; k <= M; k++)
-            curve.push(surfacePoint(uMin + (uMax - uMin) * k / M, v));
-        uCurves.push(curve);
-    }
-
-    // V polylines: v runs vMin..vMax (the circle), u is fixed
-    for (let i = 0; i <= N; i++) {
-        const u = uMin + (uMax - uMin) * i / N;
-        const curve = [];
-        for (let k = 0; k <= M; k++)
-            curve.push(surfacePoint(u, vMin + (vMax - vMin) * k / M));
-        vCurves.push(curve);
-    }
-
-    return [uCurves, vCurves];
-}
-
-
-/* Initialize the WebGL context. Called from init() */
 function initGL() {
-    let prog = createProgram( gl, vertexShaderSource, fragmentShaderSource );
+    let prog = createProgram(gl, vertexShaderSource, fragmentShaderSource);
 
     shProgram = new ShaderProgram('Basic', prog);
     shProgram.Use();
 
     shProgram.iAttribVertex              = gl.getAttribLocation(prog, "vertex");
+    shProgram.iAttribNormal              = gl.getAttribLocation(prog, "normal");
+    shProgram.iAttribTexCoord            = gl.getAttribLocation(prog, "texCoord");
+    shProgram.iAttribTangent             = gl.getAttribLocation(prog, "tangent");
+
+    shProgram.iModelViewMatrix           = gl.getUniformLocation(prog, "ModelViewMatrix");
     shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
-    shProgram.iColor                     = gl.getUniformLocation(prog, "color");
+    shProgram.iLightPosition             = gl.getUniformLocation(prog, "lightPosition");
+
+    shProgram.iDiffuseMap                = gl.getUniformLocation(prog, "uDiffuseMap");
+    shProgram.iSpecularMap               = gl.getUniformLocation(prog, "uSpecularMap");
+    shProgram.iNormalMap                 = gl.getUniformLocation(prog, "uNormalMap");
+
+    // Завантаження файлів текстур (перевір назви та розширення!)
+    diffuseTexture  = loadTexture('diffuse.png');
+    specularTexture = loadTexture('specular.png');
+    normalTexture   = loadTexture('normal.png');
 
     surface = new Model('Surface');
-    const [uCurves, vCurves] = CreateSurfaceData();
-    surface.BufferData(uCurves, vCurves);
+    
+    let nInput = document.getElementById("nSlider");
+    let mInput = document.getElementById("mSlider");
+    let N = nInput ? parseInt(nInput.value) : 36;
+    let M = mInput ? parseInt(mInput.value) : 36;
+    if (isNaN(N) || N <= 0) N = 36;
+    if (isNaN(M) || M <= 0) M = 36;
+
+    surface.BufferData(N, M, surfacePoint);
 
     gl.enable(gl.DEPTH_TEST);
 }
 
+function updateGranularity() {
+    let nInput = document.getElementById("nSlider");
+    let mInput = document.getElementById("mSlider");
+    if (!nInput || !mInput) return;
+
+    let N = parseInt(nInput.value);
+    let M = parseInt(mInput.value);
+    if (isNaN(N) || N <= 0) N = 36;
+    if (isNaN(M) || M <= 0) M = 36;
+    
+    let nVal = document.getElementById("nVal");
+    let mVal = document.getElementById("mVal");
+    if (nVal) nVal.innerText = N;
+    if (mVal) mVal.innerText = M;
+
+    if (surface) {
+        surface.BufferData(N, M, surfacePoint);
+        draw();
+    }
+}
 
 function createProgram(gl, vShader, fShader) {
-    let vsh = gl.createShader( gl.VERTEX_SHADER );
-    gl.shaderSource(vsh,vShader);
+    let vsh = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vsh, vShader);
     gl.compileShader(vsh);
-    if ( ! gl.getShaderParameter(vsh, gl.COMPILE_STATUS) ) {
-        throw new Error("Error in vertex shader:  " + gl.getShaderInfoLog(vsh));
-     }
-    let fsh = gl.createShader( gl.FRAGMENT_SHADER );
+    if (!gl.getShaderParameter(vsh, gl.COMPILE_STATUS)) {
+        throw new Error("Error in vertex shader: " + gl.getShaderInfoLog(vsh));
+    }
+    let fsh = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fsh, fShader);
     gl.compileShader(fsh);
-    if ( ! gl.getShaderParameter(fsh, gl.COMPILE_STATUS) ) {
-       throw new Error("Error in fragment shader:  " + gl.getShaderInfoLog(fsh));
+    if (!gl.getShaderParameter(fsh, gl.COMPILE_STATUS)) {
+        throw new Error("Error in fragment shader: " + gl.getShaderInfoLog(fsh));
     }
     let prog = gl.createProgram();
-    gl.attachShader(prog,vsh);
+    gl.attachShader(prog, vsh);
     gl.attachShader(prog, fsh);
     gl.linkProgram(prog);
-    if ( ! gl.getProgramParameter( prog, gl.LINK_STATUS) ) {
-       throw new Error("Link error in program:  " + gl.getProgramInfoLog(prog));
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        throw new Error("Link error in program: " + gl.getProgramInfoLog(prog));
     }
     return prog;
 }
-
 
 function init() {
     let canvas;
     try {
         canvas = document.getElementById("webglcanvas");
         gl = canvas.getContext("webgl");
-        if ( ! gl ) {
+        if (!gl) {
             throw "Browser does not support WebGL";
         }
     }
@@ -166,7 +223,7 @@ function init() {
         return;
     }
     try {
-        initGL();  // initialize the WebGL graphics context
+        initGL();
     }
     catch (e) {
         document.getElementById("canvas-holder").innerHTML =
@@ -176,5 +233,9 @@ function init() {
 
     spaceball = new TrackballRotator(canvas, draw, 0);
 
-    draw();
+    function animLoop() {
+        draw();
+        requestAnimationFrame(animLoop);
+    }
+    animLoop();
 }

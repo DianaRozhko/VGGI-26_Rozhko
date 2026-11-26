@@ -1,16 +1,35 @@
-
-
-// Vertex shader
 const vertexShaderSource = `
 attribute vec3 vertex;
+attribute vec3 normal;
+attribute vec2 texCoord;
+attribute vec3 tangent;
+
+uniform mat4 ModelViewMatrix;
 uniform mat4 ModelViewProjectionMatrix;
 
+varying vec3 vPosition;
+varying vec2 vTexCoord;
+varying mat3 vTBN;
+
 void main() {
-    gl_Position = ModelViewProjectionMatrix * vec4(vertex,1.0);
+    vec4 posEye = ModelViewMatrix * vec4(vertex, 1.0);
+    vPosition = posEye.xyz;
+    vTexCoord = texCoord;
+
+    mat3 normalMat = mat3(ModelViewMatrix);
+    vec3 T = normalize(normalMat * tangent);
+    vec3 N = normalize(normalMat * normal);
+
+    // Ортогоналізація Грама-Шмідта (Варіант: Prioritize tangent)
+    // Тангенс T залишається незмінним, нормаль N проєктується перпендикулярно до T
+    N = normalize(N - dot(N, T) * T);
+    vec3 B = cross(N, T);
+
+    vTBN = mat3(T, B, N);
+
+    gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
 }`;
 
-
-// Fragment shader
 const fragmentShaderSource = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
    precision highp float;
@@ -18,7 +37,40 @@ const fragmentShaderSource = `
    precision mediump float;
 #endif
 
-uniform vec4 color;
+varying vec3 vPosition;
+varying vec2 vTexCoord;
+varying mat3 vTBN;
+
+uniform vec3 lightPosition;
+uniform sampler2D uDiffuseMap;
+uniform sampler2D uSpecularMap;
+uniform sampler2D uNormalMap;
+
 void main() {
-    gl_FragColor = color;
+    // 1. Зчитуємо нормаль з карти нормалей [0, 1] -> [-1, 1] і переводимо через TBN
+    vec3 normalMap = texture2D(uNormalMap, vTexCoord).rgb;
+    normalMap = normalize(normalMap * 2.0 - 1.0);
+    vec3 N = normalize(vTBN * normalMap);
+
+    // 2. Зчитуємо колір (Diffuse) та інтенсивність бліку (Specular) з текстур
+    vec3 diffuseColor = texture2D(uDiffuseMap, vTexCoord).rgb;
+    float specularStrength = texture2D(uSpecularMap, vTexCoord).r;
+
+    vec3 L = normalize(lightPosition - vPosition);
+    vec3 V = normalize(-vPosition);
+    vec3 R = reflect(-L, N);
+
+    // Ambient
+    vec3 ambient = 0.2 * diffuseColor;
+
+    // Diffuse (модулюється diffuse текстурою)
+    float diff = max(dot(N, L), 0.0);
+    vec3 diffuse = diff * diffuseColor;
+
+    // Specular (модулюється specular текстурою)
+    float spec = pow(max(dot(R, V), 0.0), 32.0);
+    vec3 specular = spec * specularStrength * vec3(1.0, 1.0, 1.0);
+
+    vec3 rgb = ambient + diffuse + specular;
+    gl_FragColor = vec4(rgb, 1.0);
 }`;
