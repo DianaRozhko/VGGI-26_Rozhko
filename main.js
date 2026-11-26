@@ -5,6 +5,10 @@ let surface;
 let shProgram;
 let spaceball;
 
+let diffuseTexture;
+let specularTexture;
+let normalTexture;
+
 const a     = 0.5;
 const r     = 1.0;
 const theta = 0.25 * Math.PI;
@@ -17,14 +21,48 @@ function ShaderProgram(name, program) {
 
     this.iAttribVertex = -1;
     this.iAttribNormal = -1;
-    this.iColor = -1;
+    this.iAttribTexCoord = -1;
+    this.iAttribTangent = -1;
+
     this.iModelViewMatrix = -1;
     this.iModelViewProjectionMatrix = -1;
     this.iLightPosition = -1;
 
+    this.iDiffuseMap = -1;
+    this.iSpecularMap = -1;
+    this.iNormalMap = -1;
+
     this.Use = function() {
         gl.useProgram(this.prog);
     }
+}
+
+function loadTexture(url) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    // Тимчасова заглушка 1x1 піксель, поки файл завантажується
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+                  new Uint8Array([128, 128, 255, 255]));
+
+    const image = new Image();
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+        if ((image.width & (image.width - 1)) === 0 && (image.height & (image.height - 1)) === 0) {
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        } else {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+    };
+    image.src = url;
+    return texture;
 }
 
 function multiplyMatrixVector(m, v) {
@@ -61,6 +99,19 @@ function draw() {
 
     gl.uniform3fv(shProgram.iLightPosition, lightPosEye);
 
+    // Підключення трьох текстур до відповідних юнітів
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, diffuseTexture);
+    gl.uniform1i(shProgram.iDiffuseMap, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, specularTexture);
+    gl.uniform1i(shProgram.iSpecularMap, 1);
+
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+    gl.uniform1i(shProgram.iNormalMap, 2);
+
     surface.Draw();
 }
 
@@ -83,10 +134,21 @@ function initGL() {
 
     shProgram.iAttribVertex              = gl.getAttribLocation(prog, "vertex");
     shProgram.iAttribNormal              = gl.getAttribLocation(prog, "normal");
+    shProgram.iAttribTexCoord            = gl.getAttribLocation(prog, "texCoord");
+    shProgram.iAttribTangent             = gl.getAttribLocation(prog, "tangent");
+
     shProgram.iModelViewMatrix           = gl.getUniformLocation(prog, "ModelViewMatrix");
     shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
     shProgram.iLightPosition             = gl.getUniformLocation(prog, "lightPosition");
-    shProgram.iColor                     = gl.getUniformLocation(prog, "color");
+
+    shProgram.iDiffuseMap                = gl.getUniformLocation(prog, "uDiffuseMap");
+    shProgram.iSpecularMap               = gl.getUniformLocation(prog, "uSpecularMap");
+    shProgram.iNormalMap                 = gl.getUniformLocation(prog, "uNormalMap");
+
+    // Завантаження файлів текстур (перевір назви та розширення!)
+    diffuseTexture  = loadTexture('diffuse.png');
+    specularTexture = loadTexture('specular.png');
+    normalTexture   = loadTexture('normal.png');
 
     surface = new Model('Surface');
     
